@@ -1,1 +1,593 @@
-<!DOCTYPE html><html><body><h1>Revision Tracker Placeholder</h1></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Revision Tracker — Premium UI</title>
+
+  <!-- Tailwind CDN for styling (quick dev). For production, build Tailwind. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f1724">
+
+  <style>
+    :root{
+      --bg:#071028;
+      --card:#0f1724;
+      --muted:#93a4b8;
+      --accent1:#06b6d4;
+      --accent2:#10b981;
+      --glass: rgba(255,255,255,0.03);
+    }
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg, #071028 0%, #020617 100%);
+      color: #e6eef6;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      padding-bottom:110px; /* space for bottom nav */
+    }
+
+    /* cards */
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid rgba(255,255,255,0.03);
+      border-radius: 14px;
+      box-shadow: 0 6px 24px rgba(2,6,23,0.6);
+      overflow: hidden;
+    }
+    .accent-rail {
+      width:6px;
+      background: linear-gradient(180deg,var(--accent2),var(--accent1));
+      border-radius: 6px;
+      margin-right: 12px;
+    }
+    .pbar { height:10px; background:#0b1220; border-radius:8px; overflow:hidden; }
+    .pbar .fill { height:100%; width:0%; transition: width .6s ease; background: linear-gradient(90deg,var(--accent2),var(--accent1)); }
+
+    .circle {
+      width:28px; height:28px; border-radius:50%;
+      display:inline-flex; align-items:center; justify-content:center;
+      border:2px solid rgba(255,255,255,0.08);
+      cursor:pointer;
+    }
+    .circle.done {
+      background: linear-gradient(90deg,var(--accent2),var(--accent1));
+      border: none;
+      box-shadow: 0 6px 18px rgba(6,182,212,0.12);
+    }
+
+    .tiny { font-size: .78rem; color: var(--muted); }
+    .muted { color: var(--muted); }
+    .fade-up { transform: translateY(8px); opacity:0; animation: fadeUp .45s ease forwards; }
+    @keyframes fadeUp { to { transform: translateY(0); opacity:1; } }
+
+    .bottom-nav {
+      position: fixed;
+      left: 50%; transform: translateX(-50%);
+      bottom: 12px; width: 96%; max-width:960px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.03);
+      display:flex; align-items:center; justify-content:space-between; padding:8px 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6); z-index:50;
+    }
+
+    /* FAB */
+    .fab {
+      position: fixed; right: 22px; bottom: 86px;
+      width:56px; height:56px; border-radius: 50%;
+      display:flex; align-items:center; justify-content:center;
+      background: linear-gradient(90deg,var(--accent2),var(--accent1));
+      color: #021117; font-weight:700; box-shadow: 0 12px 36px rgba(6,182,212,0.12);
+      cursor:pointer; z-index:60;
+    }
+
+    /* responsive tweaks */
+    @media(min-width:768px){
+      .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    }
+
+    textarea.note { width:100%; min-height:100px; padding:10px; border-radius:8px; background:transparent; color:inherit; border:1px solid rgba(255,255,255,0.04); }
+    .chip { padding:6px 10px; border-radius:999px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03); font-weight:600; }
+  </style>
+</head>
+<body>
+
+  <main class="max-w-3xl mx-auto px-4 pt-6">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-4">
+      <div>
+        <div class="tiny muted">UPSC Revision</div>
+        <h1 class="text-2xl font-bold">Revision Dashboard</h1>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="exportBtn" class="chip">Export</button>
+        <button id="importBtn" class="chip">Import</button>
+      </div>
+    </header>
+
+    <!-- Subject tabs -->
+    <section class="flex items-center gap-3 mb-4">
+      <div id="tab-anth" class="chip cursor-pointer" data-sub="anthropology">Anthropology</div>
+      <div id="tab-hist" class="chip cursor-pointer" data-sub="history">History (Ancient & Modern)</div>
+      <div class="flex-1"></div>
+      <div class="tiny muted">Dark UI • PWA</div>
+    </section>
+
+    <!-- Dashboard Top: Donut + Trend + Section summary -->
+    <section class="card p-4 mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 fade-up">
+      <div class="flex items-center gap-4">
+        <div style="width:120px;height:120px;position:relative">
+          <canvas id="donut" width="120" height="120"></canvas>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <div id="donutPct" class="text-xl font-bold">0%</div>
+            <div class="tiny muted">Completed</div>
+          </div>
+        </div>
+
+        <div class="flex-1">
+          <div class="tiny muted mb-2">Progress trend (last weeks)</div>
+          <canvas id="trend" height="120"></canvas>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-semibold">Subject overview</div>
+          <div class="tiny muted" id="overallCount">0 / 0 topics</div>
+        </div>
+        <div id="sectionSummary" class="space-y-3 max-h-60 overflow-y-auto pr-2"></div>
+      </div>
+    </section>
+
+    <!-- Sections & Topics list (detailed) -->
+    <section id="sections" class="space-y-3"></section>
+
+  </main>
+
+  <!-- Floating Add button -->
+  <div class="fab" id="fabAdd" title="Add custom topic">＋</div>
+
+  <!-- bottom nav -->
+  <div class="bottom-nav">
+    <div class="flex items-center gap-2">
+      <button class="chip" id="btnDaily">Daily</button>
+      <button class="chip" id="btnWeekly">Weekly</button>
+      <button class="chip" id="btnMonthly">Monthly</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="chip" id="btnSettings">Settings</button>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="fixed inset-0 hidden items-center justify-center z-60">
+    <div class="absolute inset-0 bg-black/60"></div>
+    <div class="relative w-full max-w-lg p-4">
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-semibold">Settings & Tools</div>
+          <div>
+            <button id="closeSettings" class="chip">Close</button>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <div class="font-medium tiny muted">Pomodoro</div>
+            <div class="flex items-center gap-2 mt-2">
+              <button id="startPom" class="chip">Start 25m</button>
+              <button id="stopPom" class="chip">Stop</button>
+              <div class="tiny muted" id="pomTimer">00:00</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="font-medium tiny muted">Features</div>
+            <div class="flex items-center gap-3 mt-2">
+              <label class="tiny muted"><input type="checkbox" id="toggleCycles" class="mr-2"> Enable R1/R2/R3</label>
+              <label class="tiny muted"><input type="checkbox" id="toggleStreak" class="mr-2" checked> Enable Streak</label>
+            </div>
+          </div>
+
+          <div>
+            <div class="font-medium tiny muted">Import / Reset</div>
+            <div class="flex gap-2 mt-2">
+              <input id="importFile" type="file" accept="application/json" class="tiny" />
+              <button id="resetSub" class="chip">Reset Subject</button>
+              <button id="resetAll" class="chip">Reset All</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Note editor modal -->
+  <div id="noteModal" class="fixed inset-0 hidden items-center justify-center z-70">
+    <div class="absolute inset-0 bg-black/60"></div>
+    <div class="relative max-w-lg w-full p-4">
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div><b id="noteTitle">Notes</b></div>
+          <div>
+            <button id="saveNote" class="chip">Save</button>
+            <button id="closeNote" class="chip">Close</button>
+          </div>
+        </div>
+        <textarea id="noteEditor" class="note" placeholder="Type notes here..."></textarea>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ---------------------------
+   Topics: Confirmed lists
+   --------------------------- */
+const SUBJECTS = {
+  anthropology: {
+    title: "Anthropology",
+    sections: [
+      { title: "Meaning, Scope, Development", topics: ["Meaning of Anthropology","Scope & Branches","Historical development"] },
+      { title: "Research Methods", topics: ["Fieldwork","Ethnography","Sampling & Methods"] },
+      { title: "Social Anthropology", topics: ["Social structure","Kinship systems","Marriage patterns"] },
+      { title: "Economic Anthropology", topics: ["Subsistence patterns","Production & Exchange","Economic institutions"] },
+      { title: "Political Anthropology", topics: ["Leadership & Authority","Tribal politics","State formation"] },
+      { title: "Religion", topics: ["Belief systems","Magic & Ritual","Religion & Society"] },
+      { title: "Anthropological Theories & Indian Anthropology", topics: ["Evolutionism & Diffusionism","Indian anthropology overview","Applied anthropology"] }
+    ]
+  },
+
+  history: {
+    title: "History (Ancient & Modern)",
+    sections: [
+      { title: "Ancient India", topics: [
+        "Prehistoric cultures","Indus Valley (Harappan)","Early Vedic period",
+        "Later Vedic period","Mahajanapadas","Buddhism & Jainism",
+        "Mauryan Empire","Post-Mauryan polities","Gupta Age",
+        "Post-Gupta & regional kingdoms","South Indian kingdoms (Cholas, Cheras, Pandyas)"
+      ]},
+      { title: "Modern India", topics: [
+        "Advent of Europeans","British expansion","Impact of British rule",
+        "Social & Religious Reform Movements","Revolt of 1857","Moderate & Extremist phase",
+        "Gandhian phase","Revolutionary movements","Constitutional developments",
+        "India 1940–1947","Post-independence consolidation"
+      ]}
+    ]
+  }
+};
+
+/* ---------------------------
+   Storage keys utilities
+   --------------------------- */
+let currentSubjectKey = localStorage.getItem('rt-sub') || 'anthropology';
+let cyclesEnabled = JSON.parse(localStorage.getItem('rt-cycles') || 'true');
+let streakEnabled = JSON.parse(localStorage.getItem('rt-streak') || 'true');
+
+function keyDone(sub, si, ti){ return `rt:${sub}:s${si}:t${ti}:done`; }
+function keyNote(sub, si, ti){ return `rt:${sub}:s${si}:t${ti}:note`; }
+function keyCycles(sub, si, ti){ return `rt:${sub}:s${si}:t${ti}:cycles`; }
+function keyStreak(){ return `rt:streak`; }
+
+/* ---------------------------
+   DOM refs
+   --------------------------- */
+const elt = id => document.getElementById(id);
+const sectionsEl = elt('sections'), summaryEl = elt('sectionSummary');
+const donutPctEl = elt('donutPct'), overallCountEl = elt('overallCount');
+
+let donutChart = null, trendChart = null;
+
+/* ---------------------------
+   Render functions
+   --------------------------- */
+function calcTotals(){
+  const model = SUBJECTS[currentSubjectKey];
+  let total = 0, done = 0;
+  model.sections.forEach((sec, si) => sec.topics.forEach((t, ti) => {
+    total++; if(localStorage.getItem(keyDone(currentSubjectKey,si,ti)) === 'true') done++;
+  }));
+  return { done, total, pct: total? Math.round(done/total*100):0 };
+}
+
+function renderTop(){
+  const totals = calcTotals();
+  overallCountEl.textContent = `${totals.done} / ${totals.total} topics`;
+  donutPctEl.textContent = `${totals.pct}%`;
+
+  // donut chart
+  const ddata = [totals.done, Math.max(0, totals.total - totals.done)];
+  if(donutChart) donutChart.destroy();
+  donutChart = new Chart(elt('donut').getContext('2d'), {
+    type: 'doughnut',
+    data: { labels:['Done','Pending'], datasets: [{ data: ddata, backgroundColor: ['#10b981','#475569'] }] },
+    options: { cutout: '78%', plugins:{ legend:{ display:false } } }
+  });
+
+  // trend (mock but scaled)
+  const trend = generateTrend(totals.done, totals.total);
+  if(trendChart) trendChart.destroy();
+  trendChart = new Chart(elt('trend').getContext('2d'), {
+    type: 'line',
+    data: { labels: trend.labels, datasets: [{ data: trend.data, tension: 0.35, borderColor: '#06b6d4', backgroundColor:'rgba(6,182,212,0.08)', fill:true }] },
+    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, suggestedMax: Math.max(3, ...trend.data) } } }
+  });
+
+  // section summary
+  summaryEl.innerHTML = '';
+  SUBJECTS[currentSubjectKey].sections.forEach((sec, si) => {
+    let secTotal = sec.topics.length, secDone=0;
+    sec.topics.forEach((t, ti) => { if(localStorage.getItem(keyDone(currentSubjectKey,si,ti)) === 'true') secDone++; });
+    const pct = secTotal? Math.round(secDone/secTotal*100) : 0;
+    const div = document.createElement('div');
+    div.className = 'flex items-center gap-3 card p-3';
+    div.innerHTML = `
+      <div class="accent-rail" aria-hidden></div>
+      <div class="flex-1">
+        <div class="flex items-center justify-between mb-1">
+          <div class="font-medium">${sec.title}</div>
+          <div class="tiny muted">${pct}%</div>
+        </div>
+        <div class="pbar"><div class="fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tiny muted">${secDone}/${secTotal}</div>
+    `;
+    summaryEl.appendChild(div);
+  });
+}
+
+function renderSections(){
+  sectionsEl.innerHTML = '';
+  const model = SUBJECTS[currentSubjectKey];
+  model.sections.forEach((sec, si) => {
+    const container = document.createElement('div');
+    container.className = 'card p-3 fade-up';
+    container.innerHTML = `<div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-3">
+         <div style="width:6px;height:40px;border-radius:6px;background:linear-gradient(180deg,var(--accent2),var(--accent1))"></div>
+         <div><div class="font-semibold">${sec.title}</div><div class="tiny muted">${sec.topics.length} topics</div></div>
+      </div>
+      <div class="tiny muted">Section</div>
+    </div><div class="space-y-3" id="sec-${si}"></div>`;
+    sectionsEl.appendChild(container);
+
+    const listEl = container.querySelector(`#sec-${si}`);
+    sec.topics.forEach((topic, ti) => {
+      const done = localStorage.getItem(keyDone(currentSubjectKey,si,ti)) === 'true';
+      const note = localStorage.getItem(keyNote(currentSubjectKey,si,ti)) || '';
+      const cycles = JSON.parse(localStorage.getItem(keyCycles(currentSubjectKey,si,ti) || '{}') || '{}');
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-3';
+      row.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div style="width:4px;height:56px;border-radius:6px;background:linear-gradient(180deg,var(--accent2),var(--accent1));margin-top:6px"></div>
+          <div class="flex-1">
+            <div class="font-medium">${topic}</div>
+            <div class="tiny muted">${note? note.slice(0,80) : 'No notes yet'}</div>
+            <div class="pbar mt-2"><div class="fill" style="width:${done?100:0}%"></div></div>
+          </div>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <div class="circle ${done ? 'done' : ''}" data-si="${si}" data-ti="${ti}" title="Mark done">
+            ${done ? '✓' : ''}
+          </div>
+          <button class="tiny muted open-note" data-si="${si}" data-ti="${ti}">Notes</button>
+          <div class="rev-cycles mt-2">
+            <label><input type="checkbox" class="c-r1" data-si="${si}" data-ti="${ti}" ${cycles.r1? 'checked' : ''}/>R1</label>
+            <label><input type="checkbox" class="c-r2" data-si="${si}" data-ti="${ti}" ${cycles.r2? 'checked' : ''}/>R2</label>
+            <label><input type="checkbox" class="c-r3" data-si="${si}" data-ti="${ti}" ${cycles.r3? 'checked' : ''}/>R3</label>
+          </div>
+        </div>
+      `;
+      listEl.appendChild(row);
+
+      // toggles
+      row.querySelector('.circle').addEventListener('click', (e) => {
+        const key = keyDone(currentSubjectKey, si, ti);
+        const newVal = !(localStorage.getItem(key) === 'true');
+        localStorage.setItem(key, newVal ? 'true' : 'false');
+        // update streak if enabling done
+        if(newVal && streakEnabled) updateStreak();
+        renderTop(); renderSections();
+      });
+
+      row.querySelector('.open-note').addEventListener('click', ()=> openNote(si,ti,topic));
+      ['r1','r2','r3'].forEach(r => {
+        const cb = row.querySelector('.c-'+r);
+        cb.addEventListener('change', ()=>{
+          const cd = { r1: !!row.querySelector('.c-r1').checked, r2: !!row.querySelector('.c-r2').checked, r3: !!row.querySelector('.c-r3').checked };
+          localStorage.setItem(keyCycles(currentSubjectKey, si, ti), JSON.stringify(cd));
+        });
+      });
+    });
+  });
+}
+
+/* ---------------------------
+   Notes modal
+   --------------------------- */
+function openNote(si, ti, title){
+  elt('noteTitle').textContent = title;
+  elt('noteEditor').value = localStorage.getItem(keyNote(currentSubjectKey, si, ti)) || '';
+  elt('noteModal').classList.remove('hidden'); elt('noteModal').classList.add('flex');
+  elt('saveNote').onclick = () => {
+    const v = elt('noteEditor').value.trim();
+    if(!v) localStorage.removeItem(keyNote(currentSubjectKey, si, ti));
+    else localStorage.setItem(keyNote(currentSubjectKey, si, ti), v);
+    elt('noteModal').classList.add('hidden');
+    renderTop(); renderSections();
+  };
+  elt('closeNote').onclick = () => { elt('noteModal').classList.add('hidden'); };
+}
+
+/* ---------------------------
+   Streak (simple)
+   --------------------------- */
+function updateStreak(){
+  const today = new Date().toISOString().slice(0,10);
+  const data = JSON.parse(localStorage.getItem(keyStreak()) || '{"last":"","count":0}');
+  if(data.last === today) return; // already credited today
+  data.last = today; data.count = (data.count || 0) + 1;
+  localStorage.setItem(keyStreak(), JSON.stringify(data));
+}
+
+/* ---------------------------
+   Trend generator (demo)
+   --------------------------- */
+function generateTrend(done, total){
+  const weeks = 6; const labels = []; const data = [];
+  for(let i=weeks;i>0;i--){ labels.push('W-'+i); data.push(Math.round(Math.max(0, (total?done/total:0)*5) * Math.random())); }
+  return { labels, data };
+}
+
+/* ---------------------------
+   Utilities: export / import / reset
+   --------------------------- */
+elt('exportBtn').addEventListener('click', ()=>{
+  const model = SUBJECTS[currentSubjectKey];
+  const data = { subject: currentSubjectKey, sections: [] };
+  model.sections.forEach((sec, si) => {
+    const s = { title: sec.title, topics: [] };
+    sec.topics.forEach((t, ti) => {
+      s.topics.push({
+        title: t,
+        done: localStorage.getItem(keyDone(currentSubjectKey,si,ti)) === 'true',
+        note: localStorage.getItem(keyNote(currentSubjectKey,si,ti)) || '',
+        cycles: JSON.parse(localStorage.getItem(keyCycles(currentSubjectKey,si,ti) || '{}') || '{}')
+      });
+    });
+    data.sections.push(s);
+  });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${currentSubjectKey}-export.json`; document.body.appendChild(a); a.click(); a.remove();
+});
+
+elt('importBtn').addEventListener('click', ()=>{
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
+  inp.onchange = (e) => {
+    const file = e.target.files[0]; if(!file) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const parsed = JSON.parse(r.result);
+        if(parsed.subject && parsed.sections){
+          if(!confirm('Import will overwrite progress for the subject. Continue?')) return;
+          parsed.sections.forEach((sec, si) => {
+            sec.topics.forEach((t, ti) => {
+              if(t.done) localStorage.setItem(keyDone(parsed.subject, si, ti), 'true'); else localStorage.removeItem(keyDone(parsed.subject, si, ti));
+              if(t.note) localStorage.setItem(keyNote(parsed.subject, si, ti), t.note); else localStorage.removeItem(keyNote(parsed.subject, si, ti));
+              if(t.cycles) localStorage.setItem(keyCycles(parsed.subject, si, ti), JSON.stringify(t.cycles)); else localStorage.removeItem(keyCycles(parsed.subject, si, ti));
+            });
+          });
+          alert('Import complete.');
+        } else alert('Invalid file.');
+      } catch(err){ alert('Failed to parse file'); }
+    };
+    r.readAsText(file);
+  };
+  inp.click();
+});
+
+/* ---------------------------
+   Settings modal handlers
+   --------------------------- */
+elt('btnSettings').addEventListener('click', ()=> { elt('settingsModal').classList.remove('hidden'); elt('settingsModal').classList.add('flex'); });
+elt('closeSettings').addEventListener('click', ()=> { elt('settingsModal').classList.add('hidden'); });
+
+elt('resetSub').addEventListener('click', ()=> {
+  if(!confirm('Reset progress for this subject?')) return;
+  SUBJECTS[currentSubjectKey].sections.forEach((sec, si) => sec.topics.forEach((t, ti) => {
+    localStorage.removeItem(keyDone(currentSubjectKey, si, ti));
+    localStorage.removeItem(keyNote(currentSubjectKey, si, ti));
+    localStorage.removeItem(keyCycles(currentSubjectKey, si, ti));
+  }));
+  renderTop(); renderSections();
+});
+
+elt('resetAll').addEventListener('click', ()=> {
+  if(!confirm('Reset ALL subjects?')) return;
+  Object.keys(SUBJECTS).forEach(sub => {
+    SUBJECTS[sub].sections.forEach((sec, si) => sec.topics.forEach((t, ti) => {
+      localStorage.removeItem(keyDone(sub, si, ti));
+      localStorage.removeItem(keyNote(sub, si, ti));
+      localStorage.removeItem(keyCycles(sub, si, ti));
+    }));
+  });
+  renderTop(); renderSections();
+});
+
+/* ---------------------------
+   Pomodoro (simple)
+   --------------------------- */
+let pomInterval = null; let pomRemain = 25*60;
+function updatePomDisplay(){
+  const mm = String(Math.floor(pomRemain/60)).padStart(2,'0'); const ss = String(pomRemain%60).padStart(2,'0');
+  elt('pomTimer').textContent = `${mm}:${ss}`;
+}
+elt('startPom').addEventListener('click', ()=>{
+  if(pomInterval) clearInterval(pomInterval);
+  pomRemain = 25*60; updatePomDisplay();
+  pomInterval = setInterval(()=>{
+    pomRemain--;
+    updatePomDisplay();
+    if(pomRemain <= 0){ clearInterval(pomInterval); pomInterval = null; alert('Pomodoro finished — take a 5 min break!'); }
+  }, 1000);
+});
+elt('stopPom').addEventListener('click', ()=> { if(pomInterval) clearInterval(pomInterval); pomInterval = null; pomRemain = 25*60; updatePomDisplay(); });
+
+/* ---------------------------
+   Add custom topic (FAB)
+   --------------------------- */
+elt('fabAdd').addEventListener('click', ()=>{
+  const sub = currentSubjectKey;
+  const sIndex = 0; // default to first section of subject for quick add
+  const title = prompt('Add topic title (it will be added to first section):');
+  if(title && title.trim()){
+    SUBJECTS[sub].sections[sIndex].topics.push(title.trim());
+    renderTop(); renderSections();
+    alert('Topic added to first section. You can re-order later (not yet implemented).');
+  }
+});
+
+/* ---------------------------
+   Subject tab switching
+   --------------------------- */
+document.querySelectorAll('[data-sub]').forEach(el => {
+  el.addEventListener('click', () => {
+    const sub = el.getAttribute('data-sub');
+    currentSubjectKey = sub;
+    localStorage.setItem('rt-sub', sub);
+    document.querySelectorAll('.chip[data-sub]').forEach(ch => ch.classList.remove('active'));
+    el.classList.add('active');
+    renderTop(); renderSections();
+  });
+});
+
+/* ---------------------------
+   Notes modal save/close handled above
+   --------------------------- */
+
+/* ---------------------------
+   init
+   --------------------------- */
+(function init(){
+  // set initial active tab
+  document.querySelectorAll('[data-sub]').forEach(ch => { if(ch.getAttribute('data-sub') === currentSubjectKey) ch.classList.add('active'); });
+  renderTop(); renderSections();
+  updatePomDisplay();
+  // service worker registration (PWA)
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').then(()=> console.log('SW registered')).catch(()=> console.log('SW failed'));
+  }
+})();
+</script>
+</body>
+</html>
